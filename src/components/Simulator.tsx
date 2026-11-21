@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import Image from "next/image";
+import { ImagePlus } from "lucide-react";
 import { archivoNarrow, interTight, robotoCondensed } from "@/lib/fonts";
-import { autoTextColor, canvasToBlob, drawQuote, FORMATS, layoutQuote, LINE_FACTOR, TRACKING_EM, type Format } from "@/lib/render";
+import { GALLERY, galleryPage, galleryUrl, type GalleryItem } from "@/lib/gallery";
+import { autoTextColor, canvasToBlob, coverRect, drawQuote, FORMATS, layoutQuote, LINE_FACTOR, SHADOW, TRACKING_EM, type Format } from "@/lib/render";
 
 const BACKGROUNDS = [
   "#FFC8C8",
@@ -36,6 +38,10 @@ const CARD_HEIGHT: Record<Format, string> = {
 };
 
 type FontKey = (typeof FONTS)[number]["key"];
+type BgMode = "color" | "image";
+type Picked = { id: string; src: string; item: GalleryItem | null };
+type Loaded = { id: string; el: HTMLImageElement };
+type Focus = { x: number; y: number };
 
 const subscribeNoop = () => () => {};
 
@@ -105,17 +111,26 @@ export default function Simulator() {
   const [focused, setFocused] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [bgMode, setBgMode] = useState<BgMode>("color");
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [focus, setFocus] = useState<Focus>({ x: 0.5, y: 0.5 });
+  const [dim, setDim] = useState(0.12);
+  const uploadUrl = useRef<string | null>(null);
 
   const canShare = useSyncExternalStore(subscribeNoop, supportsFileShare, () => false);
   const isEmpty = !text.trim();
   const ghost = useGhostTyping(isEmpty && !focused);
 
-  const color = textColor ?? autoTextColor(background);
+  const isImage = bgMode === "image";
+  const activeImage = isImage && picked && loaded && loaded.id === picked.id ? loaded.el : null;
+  const color = textColor ?? (isImage ? "#FFFFFF" : autoTextColor(background));
+  const mode = isImage ? "image" : "color";
   const font = FONTS.find((f) => f.key === fontKey)!.font;
   const fontFamily = font.style.fontFamily;
 
   useEffect(() => {
-    const loads = FONTS.flatMap((f) => [400, 500].map((wgt) => document.fonts.load(`${wgt} 64px ${f.font.style.fontFamily}`, "aé“")));
+    const loads = FONTS.flatMap((f) => [400, 500, 600].map((wgt) => document.fonts.load(`${wgt} 64px ${f.font.style.fontFamily}`, "aé“")));
     let alive = true;
     Promise.allSettled(loads).then(() => alive && setFontsReady(true));
     return () => {
@@ -127,9 +142,54 @@ export default function Simulator() {
 
   const display = isEmpty ? ghost : text;
   const layout = useMemo(
-    () => (measure ? layoutQuote(measure, display, { fontFamily, fontWeight: weight, format }) : null),
-    [measure, display, fontFamily, weight, format],
+    () => (measure ? layoutQuote(measure, display, { fontFamily, fontWeight: weight, format, mode }) : null),
+    [measure, display, fontFamily, weight, format, mode],
   );
+
+  useEffect(() => {
+    if (!picked) return;
+    let alive = true;
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => alive && setLoaded({ id: picked.id, el: img });
+    img.onerror = () => alive && setToast("Não deu pra carregar a imagem");
+    img.src = picked.src;
+    return () => {
+      alive = false;
+    };
+  }, [picked]);
+
+  const pickGallery = useCallback((item: GalleryItem) => {
+    setPicked({ id: item.id, src: galleryUrl(item, 1920), item });
+    setFocus({ x: item.fx, y: item.fy });
+  }, []);
+
+  const pickFile = useCallback((file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    if (uploadUrl.current) URL.revokeObjectURL(uploadUrl.current);
+    const url = URL.createObjectURL(file);
+    uploadUrl.current = url;
+    setPicked({ id: `upload-${Date.now()}`, src: url, item: null });
+    setFocus({ x: 0.5, y: 0.5 });
+    setBgMode("image");
+  }, []);
+
+  const changeMode = (next: BgMode) => {
+    setBgMode(next);
+    if (next === "image" && !picked) pickGallery(GALLERY[0]);
+  };
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
+      if (!file) return;
+      e.preventDefault();
+      pickFile(file);
+      setToast("Imagem colada");
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [pickFile]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -138,7 +198,17 @@ export default function Simulator() {
     let cancelled = false;
 
     const timer = window.setTimeout(async () => {
-      drawQuote(canvas, { text, background, color, fontFamily, fontWeight: weight, format });
+      drawQuote(canvas, {
+        text,
+        background,
+        color,
+        fontFamily,
+        fontWeight: weight,
+        format,
+        mode,
+        image: activeImage ? { el: activeImage, fx: focus.x, fy: focus.y } : null,
+        dim: activeImage ? dim : 0,
+      });
       const blob = await canvasToBlob(canvas);
       if (cancelled || id !== renderId.current) return;
       blobRef.current = blob;
@@ -149,7 +219,7 @@ export default function Simulator() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [text, background, color, fontFamily, weight, format, fontsReady]);
+  }, [text, background, color, fontFamily, weight, format, fontsReady, mode, activeImage, focus, dim]);
 
   useEffect(() => {
     if (!toast) return;
@@ -218,6 +288,11 @@ export default function Simulator() {
           layout={layout}
           ghost={isEmpty}
           caret={focused}
+          image={activeImage && picked ? { src: picked.src, el: activeImage } : null}
+          focus={focus}
+          dim={dim}
+          onFocusChange={setFocus}
+          onDropFile={pickFile}
         />
         <canvas ref={canvasRef} className="hidden" />
       </section>
@@ -258,12 +333,63 @@ export default function Simulator() {
         </Field>
 
         <Field label="Fundo" delay={120}>
-          <div className="flex flex-wrap gap-2.5">
-            {BACKGROUNDS.map((c) => (
-              <Swatch key={c} color={c} active={background.toLowerCase() === c.toLowerCase()} onClick={() => setBackground(c)} />
-            ))}
-            <ColorPicker value={background} onChange={setBackground} active={!BACKGROUNDS.some((c) => c.toLowerCase() === background.toLowerCase())} />
-          </div>
+          <Segmented
+            options={[
+              { value: "color", label: "Cor" },
+              { value: "image", label: "Imagem" },
+            ]}
+            value={bgMode}
+            onChange={changeMode}
+            itemClassName="h-9 text-sm"
+          />
+          {!isImage ? (
+            <div key="color" className="swap-in flex flex-wrap gap-2.5">
+              {BACKGROUNDS.map((c) => (
+                <Swatch key={c} color={c} active={background.toLowerCase() === c.toLowerCase()} onClick={() => setBackground(c)} />
+              ))}
+              <ColorPicker value={background} onChange={setBackground} active={!BACKGROUNDS.some((c) => c.toLowerCase() === background.toLowerCase())} />
+            </div>
+          ) : (
+            <div key="image" className="swap-in flex flex-col gap-3">
+              <div className="grid grid-cols-5 gap-2">
+                <label
+                  className={`group relative grid aspect-square cursor-pointer place-items-center rounded-xl border border-dashed transition-all duration-500 ease-[var(--ease-spring)] hover:scale-105 active:scale-95 ${picked && !picked.item ? "border-white bg-white/10 text-white" : "border-white/25 bg-white/[0.04] text-white/60 hover:border-white/50 hover:text-white"}`}
+                  title="Usar sua imagem"
+                >
+                  <ImagePlus size={20} strokeWidth={1.6} className="transition-transform duration-500 ease-[var(--ease-spring)] group-hover:-rotate-6" />
+                  <input type="file" accept="image/*" className="sr-only" onChange={(e) => pickFile(e.target.files?.[0])} />
+                </label>
+                {GALLERY.map((item, i) => (
+                  <Thumb key={item.id} item={item} index={i} active={picked?.id === item.id} onClick={() => pickGallery(item)} />
+                ))}
+              </div>
+              <div className="min-h-[2.5em] text-xs leading-relaxed text-white/40">
+                {picked?.item ? (
+                  <a href={galleryPage(picked.item)} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-white">
+                    <span className="text-white/70">{picked.item.title}</span> · {picked.item.artist}, {picked.item.year} · Domínio público
+                  </a>
+                ) : picked ? (
+                  <span>
+                    <span className="text-white/70">Sua imagem</span> · arraste no preview pra ajustar o enquadramento
+                  </span>
+                ) : null}
+                <span className="hidden text-white/25 md:block">Dica: Ctrl+V cola uma imagem, ou solte o arquivo em cima do preview</span>
+              </div>
+              <label className="flex items-center gap-3 text-xs text-white/50">
+                <span className="w-16">Escurecer</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={0.7}
+                  step={0.01}
+                  value={dim}
+                  onChange={(e) => setDim(Number(e.target.value))}
+                  className="h-1 flex-1 cursor-pointer accent-white"
+                />
+                <span className="w-9 text-right tabular-nums">{Math.round(dim * 100)}%</span>
+              </label>
+            </div>
+          )}
         </Field>
 
         <Field label="Texto" delay={180}>
@@ -291,6 +417,7 @@ export default function Simulator() {
             options={[
               { value: 400, label: "Regular" },
               { value: 500, label: "Médio" },
+              { value: 600, label: "Negrito" },
             ]}
             value={weight}
             onChange={setWeight}
@@ -379,6 +506,29 @@ function Field({ label, delay, children }: { label: string; delay: number; child
   );
 }
 
+function Thumb({ item, index, active, onClick }: { item: GalleryItem; index: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={`${item.title} — ${item.artist}`}
+      className={`swap-in group relative aspect-square overflow-hidden rounded-xl bg-white/5 ring-1 transition-all duration-500 ease-[var(--ease-spring)] hover:scale-105 active:scale-95 ${active ? "scale-105 ring-2 ring-white shadow-[0_8px_24px_-8px_rgba(255,255,255,0.5)]" : "ring-white/10"}`}
+      style={{ animationDelay: `${index * 25}ms` }}
+    >
+      <Image
+        src={galleryUrl(item, 330)}
+        alt={item.title}
+        fill
+        unoptimized
+        sizes="72px"
+        className="object-cover text-transparent transition-transform duration-700 ease-[var(--ease-out-expo)] group-hover:scale-115"
+        style={{ objectPosition: `${item.fx * 100}% ${item.fy * 100}%` }}
+      />
+    </button>
+  );
+}
+
+type PreviewImage = { src: string; el: HTMLImageElement };
+
 function Preview({
   format,
   background,
@@ -388,6 +538,11 @@ function Preview({
   layout,
   ghost,
   caret,
+  image,
+  focus,
+  dim,
+  onFocusChange,
+  onDropFile,
 }: {
   format: Format;
   background: string;
@@ -397,24 +552,52 @@ function Preview({
   layout: { size: number; lines: string[] } | null;
   ghost: boolean;
   caret: boolean;
+  image: PreviewImage | null;
+  focus: Focus;
+  dim: number;
+  onFocusChange: (f: Focus) => void;
+  onDropFile: (file: File | undefined) => void;
 }) {
   const tiltRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const prevKey = useRef(`${background}|${format}`);
+  const drag = useRef<{ x: number; y: number; fx: number; fy: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const animKey = `${background}|${format}|${image?.src ?? ""}`;
+  const prevKey = useRef(animKey);
   const { w, h } = FORMATS[format];
 
   useEffect(() => {
-    const key = `${background}|${format}`;
-    if (prevKey.current === key) return;
-    prevKey.current = key;
+    if (prevKey.current === animKey) return;
+    prevKey.current = animKey;
     cardRef.current?.animate(
       [{ transform: "scale(1)" }, { transform: "scale(1.03)" }, { transform: "scale(1)" }],
       { duration: 480, easing: "cubic-bezier(0.34, 1.36, 0.5, 1)" },
     );
-  }, [background, format]);
+  }, [animKey]);
+
+  const resetTilt = () => {
+    const el = tiltRef.current;
+    if (!el) return;
+    el.style.setProperty("--rx", "0deg");
+    el.style.setProperty("--ry", "0deg");
+  };
 
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || !tiltRef.current) return;
+    if (drag.current && image && cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      const k = w / rect.width;
+      const r = coverRect(image.el.naturalWidth, image.el.naturalHeight, w, h, 0, 0);
+      const dx = (e.clientX - drag.current.x) * k;
+      const dy = (e.clientY - drag.current.y) * k;
+      const clamp = (v: number) => Math.min(1, Math.max(0, v));
+      onFocusChange({
+        x: r.w > w ? clamp(drag.current.fx - dx / (r.w - w)) : 0.5,
+        y: r.h > h ? clamp(drag.current.fy - dy / (r.h - h)) : 0.5,
+      });
+      return;
+    }
+    if (e.pointerType !== "mouse" || !tiltRef.current || image) return;
     const rect = tiltRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
@@ -425,11 +608,17 @@ function Preview({
     el.style.setProperty("--my", `${y * 100}%`);
   };
 
-  const onLeave = () => {
-    const el = tiltRef.current;
-    if (!el) return;
-    el.style.setProperty("--rx", "0deg");
-    el.style.setProperty("--ry", "0deg");
+  const onDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (!image) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, fx: focus.x, fy: focus.y };
+    setDragging(true);
+    resetTilt();
+  };
+
+  const onUp = () => {
+    drag.current = null;
+    setDragging(false);
   };
 
   const children: ReactNode[] = [];
@@ -454,32 +643,63 @@ function Preview({
     letterSpacing: `${TRACKING_EM}em`,
     fontWeight: weight,
     color,
-    opacity: ghost && !caret ? 0.38 : 1,
+    opacity: ghost && !caret ? (image ? 0.6 : 0.38) : 1,
+    textShadow: image ? `0 ${SHADOW.offsetEm}em ${SHADOW.blurEm}em ${SHADOW.color}` : undefined,
   };
 
   return (
     <div className="rise relative" style={{ animationDelay: "40ms" }}>
       <div
-        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[130%] w-[190%] -translate-x-1/2 -translate-y-1/2 opacity-25 transition-colors duration-700 [mask-image:radial-gradient(closest-side,black,transparent)]"
-        style={{ backgroundColor: background }}
+        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[130%] w-[190%] -translate-x-1/2 -translate-y-1/2 bg-cover bg-center opacity-25 transition-colors duration-700 [mask-image:radial-gradient(closest-side,black,transparent)]"
+        style={{ backgroundColor: image ? "transparent" : background, backgroundImage: image ? `url("${image.src}")` : undefined }}
       />
       <div
         ref={tiltRef}
         onPointerMove={onMove}
-        onPointerLeave={onLeave}
+        onPointerLeave={() => !drag.current && resetTilt()}
         className="group [perspective:1100px]"
         style={{ "--rx": "0deg", "--ry": "0deg", "--mx": "50%", "--my": "50%" } as CSSProperties}
       >
         <div
           ref={cardRef}
-          className="relative overflow-hidden rounded-[22px] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] ring-1 ring-white/10 transition-[width,height,transform,background-color] duration-[600ms,600ms,350ms,600ms] ease-[var(--ease-out-expo)] [container-type:size] [transform:rotateX(var(--rx))_rotateY(var(--ry))]"
+          onPointerDown={onDown}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDropping(true);
+          }}
+          onDragLeave={() => setDropping(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDropping(false);
+            onDropFile(e.dataTransfer.files?.[0]);
+          }}
+          className={`relative overflow-hidden rounded-[22px] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] ring-1 transition-[width,height,transform,background-color,box-shadow] duration-[600ms,600ms,350ms,600ms,300ms] ease-[var(--ease-out-expo)] [container-type:size] [transform:rotateX(var(--rx))_rotateY(var(--ry))] ${image ? (dragging ? "cursor-grabbing touch-none" : "cursor-grab touch-none") : ""} ${dropping ? "ring-2 ring-white" : "ring-white/10"}`}
           style={{
-            backgroundColor: background,
+            backgroundColor: image ? "#111" : background,
             height: CARD_HEIGHT[format],
             width: `calc(${CARD_HEIGHT[format]} * ${w / h})`,
           }}
         >
-          <div className="absolute inset-0 flex items-center justify-center">
+          {image && (
+            <>
+              <Image
+                key={image.src}
+                src={image.src}
+                alt=""
+                fill
+                unoptimized
+                draggable={false}
+                crossOrigin="anonymous"
+                sizes="400px"
+                className="img-in pointer-events-none select-none object-cover"
+                style={{ objectPosition: `${focus.x * 100}% ${focus.y * 100}%` }}
+              />
+              <div className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-300" style={{ opacity: dim }} />
+            </>
+          )}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <p
               className={`${fontClass} w-full text-center transition-[font-size,color,opacity] duration-500 ease-[var(--ease-out-expo)]`}
               style={textStyle}
@@ -488,10 +708,21 @@ function Preview({
               {caret && <span className="caret" />}
             </p>
           </div>
-          <div
-            className="pointer-events-none absolute inset-0 opacity-0 mix-blend-soft-light transition-opacity duration-500 group-hover:opacity-100"
-            style={{ background: "radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,0.7), transparent 55%)" }}
-          />
+          {image ? (
+            <div
+              className={`pointer-events-none absolute inset-x-0 bottom-4 flex justify-center transition-all duration-500 ease-[var(--ease-out-expo)] ${dragging ? "translate-y-2 opacity-0" : "translate-y-0 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-80"}`}
+            >
+              <span className="rounded-full bg-black/55 px-3 py-1 text-[11px] font-medium text-white/90 backdrop-blur-md">Arraste pra ajustar</span>
+            </div>
+          ) : (
+            <div
+              className="pointer-events-none absolute inset-0 opacity-0 mix-blend-soft-light transition-opacity duration-500 group-hover:opacity-100"
+              style={{ background: "radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,0.7), transparent 55%)" }}
+            />
+          )}
+          {dropping && (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/50 text-sm font-medium text-white backdrop-blur-sm">Solte a imagem aqui</div>
+          )}
         </div>
       </div>
     </div>

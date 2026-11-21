@@ -12,13 +12,27 @@ export type LayoutOptions = {
   fontFamily: string;
   fontWeight: number;
   format: Format;
+  mode: "color" | "image";
 };
+
+export type BackgroundImage = { el: HTMLImageElement; fx: number; fy: number };
 
 export type RenderOptions = LayoutOptions & {
   text: string;
   background: string;
   color: string;
+  image: BackgroundImage | null;
+  dim: number;
 };
+
+export const SHADOW = { color: "rgba(0,0,0,0.6)", blurEm: 0.14, offsetEm: 0.035 };
+
+export function coverRect(iw: number, ih: number, w: number, h: number, fx: number, fy: number) {
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  return { x: (w - dw) * fx, y: (h - dh) * fy, w: dw, h: dh };
+}
 
 export type Layout = { size: number; lines: string[] };
 
@@ -75,9 +89,10 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
 export function layoutQuote(ctx: CanvasRenderingContext2D, text: string, options: LayoutOptions): Layout {
   const { w, h } = FORMATS[options.format];
   const content = text.trim();
-  const maxWidth = w * 0.84;
-  const maxHeight = h * (options.format === "story" ? 0.64 : 0.76);
-  const maxSize = Math.round(w * 0.112);
+  const isImage = options.mode === "image";
+  const maxWidth = w * (isImage ? 0.86 : 0.84);
+  const maxHeight = h * (isImage ? 0.5 : options.format === "story" ? 0.64 : 0.76);
+  const maxSize = Math.round(w * (isImage ? 0.072 : 0.112));
   const minSize = Math.round(w * 0.04);
 
   let size = maxSize;
@@ -119,6 +134,18 @@ export function drawQuote(canvas: HTMLCanvasElement, options: RenderOptions) {
 
   ctx.fillStyle = options.background;
   ctx.fillRect(0, 0, w, h);
+
+  if (options.image) {
+    const { el, fx, fy } = options.image;
+    const r = coverRect(el.naturalWidth, el.naturalHeight, w, h, fx, fy);
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(el, r.x, r.y, r.w, r.h);
+    if (options.dim > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${options.dim})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+
   if (!options.text.trim()) return;
 
   const { size, lines } = layoutQuote(ctx, options.text, options);
@@ -129,6 +156,11 @@ export function drawQuote(canvas: HTMLCanvasElement, options: RenderOptions) {
   let y = h / 2 - blockHeight / 2 + lineHeight / 2 + glyphOffset;
 
   ctx.fillStyle = options.color;
+  if (options.image) {
+    ctx.shadowColor = SHADOW.color;
+    ctx.shadowBlur = size * SHADOW.blurEm;
+    ctx.shadowOffsetY = size * SHADOW.offsetEm;
+  }
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   for (const line of lines) {

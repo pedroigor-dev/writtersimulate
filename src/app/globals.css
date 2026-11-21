@@ -104,6 +104,40 @@ textarea {
   }
 }
 
+.swap-in {
+  animation: swap-in 600ms var(--ease-out-expo) both;
+}
+
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+.img-in {
+  animation: img-in 700ms var(--ease-out-expo) both;
+}
+
+@keyframes img-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
 .rgb-logo {
   animation: hue-spin 4s linear infinite;
 }
@@ -120,6 +154,8 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .ink,
   .rise,
+  .swap-in,
+  .img-in,
   .shine::after {
     animation: none !important;
   }
