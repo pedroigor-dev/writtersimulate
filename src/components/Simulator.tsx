@@ -297,6 +297,20 @@ export default function Simulator() {
           />
         </Field>
 
+        <a
+          href="https://www.instagram.com/_pedroigorc/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rise group flex self-center md:fixed md:bottom-5 md:right-6 md:z-10 items-center gap-1.5 rounded-full bg-[#0e0e0e]/70 px-3 py-1.5 text-xs text-white/45 ring-1 ring-white/10 backdrop-blur-md transition-all duration-500 ease-[var(--ease-out-expo)] hover:-translate-y-0.5 hover:text-white hover:ring-white/25"
+          style={{ animationDelay: "500ms" }}
+        >
+          <span className="text-white/30 transition-colors duration-500 group-hover:text-white/60">Design &amp; Dev ·</span>
+          <span className="relative">
+            @devpedro
+            <span className="absolute -bottom-px left-0 h-px w-full origin-left scale-x-0 bg-[#FFC8C8] transition-transform duration-500 ease-[var(--ease-out-expo)] group-hover:scale-x-100" />
+          </span>
+        </a>
+
         <div
           className="rise fixed inset-x-0 bottom-0 z-10 flex gap-2 border-t border-white/10 bg-[#0e0e0e]/80 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none"
           style={{ animationDelay: "300ms" }}
@@ -340,7 +354,7 @@ export default function Simulator() {
 function Logo() {
   return (
     <h1 className="group flex cursor-default items-baseline text-2xl font-semibold tracking-tight">
-      writter
+      YourWritter
       <span className="ml-0.5 inline-block h-[0.85em] w-[2px] translate-y-[0.1em] rounded-full bg-white/80 [animation:caret_1.05s_ease-in-out_infinite]" />
     </h1>
   );
