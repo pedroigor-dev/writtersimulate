@@ -5,7 +5,7 @@ import Wallpaper from "@/components/Wallpaper";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "YourWritter — simulador de frases",
+  title: "YourWritter",
   description: "Escreva sua frase, escolha a cor e poste nos stories ou no feed.",
 };
 

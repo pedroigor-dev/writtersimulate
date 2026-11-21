@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import Image from "next/image";
 import { archivoNarrow, interTight, robotoCondensed } from "@/lib/fonts";
 import { autoTextColor, canvasToBlob, drawQuote, FORMATS, layoutQuote, LINE_FACTOR, TRACKING_EM, type Format } from "@/lib/render";
 
@@ -353,7 +354,16 @@ export default function Simulator() {
 
 function Logo() {
   return (
-    <h1 className="group flex cursor-default items-baseline text-2xl font-semibold tracking-tight">
+    <h1 className="group flex cursor-default items-center gap-2.5 text-2xl font-semibold tracking-tight">
+      <Image
+        src="/logo.svg"
+        unoptimized
+        priority
+        alt=""
+        width={32}
+        height={32}
+        className="rgb-logo h-8 w-8 rounded-[9px] transition-transform duration-500 ease-[var(--ease-spring)] group-hover:-rotate-6 group-hover:scale-110"
+      />
       YourWritter
       <span className="ml-0.5 inline-block h-[0.85em] w-[2px] translate-y-[0.1em] rounded-full bg-white/80 [animation:caret_1.05s_ease-in-out_infinite]" />
     </h1>

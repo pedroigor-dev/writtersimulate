@@ -104,6 +104,19 @@ textarea {
   }
 }
 
+.rgb-logo {
+  animation: hue-spin 4s linear infinite;
+}
+
+@keyframes hue-spin {
+  0% {
+    filter: drop-shadow(0 4px 12px rgba(255, 150, 170, 0.75)) hue-rotate(0deg) saturate(2.4);
+  }
+  100% {
+    filter: drop-shadow(0 4px 12px rgba(255, 150, 170, 0.75)) hue-rotate(360deg) saturate(2.4);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ink,
   .rise,
